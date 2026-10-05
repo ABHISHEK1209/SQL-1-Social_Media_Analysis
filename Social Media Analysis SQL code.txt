@@ -1,0 +1,206 @@
+-- Q1 Find the most active users (by posts + comments)
+SELECT 
+    u.user_id,
+    u.username,
+    COUNT(DISTINCT p.post_id) AS post_count,
+    COUNT(DISTINCT c.comment_id) AS comment_count,
+    COUNT(DISTINCT p.post_id) + COUNT(DISTINCT c.comment_id) AS total_activity
+FROM users u
+LEFT JOIN posts p ON u.user_id = p.user_id
+LEFT JOIN comments c ON u.user_id = c.user_id
+GROUP BY u.user_id, u.username
+ORDER BY total_activity DESC
+LIMIT 10;
+
+-- Q2 Identify the most liked posts and their creators.
+SELECT 
+    p.post_id,
+    u.username,
+    COUNT(l.like_id) AS like_count
+FROM posts p
+JOIN users u ON p.user_id = u.user_id
+LEFT JOIN likes l ON p.post_id = l.post_id
+GROUP BY p.post_id, u.username
+ORDER BY like_count DESC
+LIMIT 10;
+
+-- Q3 Find top 5 countries by average engagement (likes per post)
+SELECT 
+    u.country,
+    COUNT(l.like_id) / COUNT(DISTINCT p.post_id) AS avg_likes_per_post
+FROM users u
+JOIN posts p ON u.user_id = p.user_id
+LEFT JOIN likes l ON p.post_id = l.post_id
+GROUP BY u.country
+ORDER BY avg_likes_per_post DESC
+LIMIT 5;
+
+-- Q4 Discover trending hashtags (used in >20 posts).
+SELECT 
+    h.hashtag_id,
+    h.tag_name,
+    COUNT(ph.post_id) AS post_count
+FROM hashtags h
+JOIN post_hashtags ph ON h.hashtag_id = ph.hashtag_id
+GROUP BY h.hashtag_id, h.tag_name
+ORDER BY post_count DESC
+LIMIT 10;
+
+-- Q5 Identify top influencers (users with most followers)
+SELECT 
+    u.user_id,
+    u.username,
+    COUNT(f.follower_user_id) AS follower_count
+FROM users u
+JOIN followers f ON u.user_id = f.user_id
+GROUP BY u.user_id, u.username
+ORDER BY follower_count DESC
+LIMIT 10;
+
+-- Q6 Find users who follow others but never like or comment
+SELECT 
+    u.user_id AS follower_id,
+    u.username AS follower_username,
+    followed.user_id AS followed_id,
+    followed.username AS followed_username,
+    COUNT(DISTINCT l.like_id) AS like_count,
+    COUNT(DISTINCT c.comment_id) AS comment_count
+FROM users u
+JOIN followers f ON f.follower_user_id = u.user_id
+JOIN users followed ON followed.user_id = f.user_id
+LEFT JOIN likes l ON l.user_id = u.user_id
+LEFT JOIN comments c ON c.user_id = u.user_id
+WHERE NOT EXISTS (
+        SELECT 1 FROM likes l2 WHERE l2.user_id = u.user_id
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM comments c2 WHERE c2.user_id = u.user_id
+    )
+GROUP BY u.user_id, u.username, followed.user_id, followed.username
+ORDER BY u.username;
+
+-- Q7 Find hashtags with the highest engagement (likes + comments)
+SELECT 
+    h.hashtag_id,
+    h.tag_name,
+    COUNT(DISTINCT l.like_id) + COUNT(DISTINCT c.comment_id) AS engagement_score
+FROM hashtags h
+JOIN post_hashtags ph ON h.hashtag_id = ph.hashtag_id
+JOIN posts p ON ph.post_id = p.post_id
+LEFT JOIN likes l ON p.post_id = l.post_id
+LEFT JOIN comments c ON p.post_id = c.post_id
+GROUP BY h.hashtag_id, h.tag_name
+ORDER BY engagement_score DESC
+LIMIT 10;
+
+-- Q8 Find the busiest hours or days for posting activity.
+
+SELECT 
+    HOUR(created_at) AS post_hour,
+    DAYNAME(created_at) AS post_day,
+    COUNT(*) AS post_count
+FROM posts
+GROUP BY HOUR(created_at), DAYNAME(created_at)
+ORDER BY post_count DESC;
+
+-- Q9 Identify inactive users (no posts, likes, or comments)
+SELECT 
+    u.user_id,
+    u.username
+FROM users u
+LEFT JOIN posts p ON u.user_id = p.user_id
+LEFT JOIN likes l ON u.user_id = l.user_id
+LEFT JOIN comments c ON u.user_id = c.user_id
+WHERE p.post_id IS NULL
+    AND l.like_id IS NULL
+    AND c.comment_id IS NULL;
+
+-- Q10 List top 5 countries with most influencers.
+SELECT 
+    u.country,
+    COUNT(f.follower_user_id) AS total_followers
+FROM users u
+JOIN followers f ON u.user_id = f.user_id
+GROUP BY u.country
+ORDER BY total_followers DESC
+LIMIT 5;
+
+-- Q11 Calculate engagement rate = (likes + comments) / posts.
+SELECT 
+    u.user_id,
+    u.username,
+    COUNT(DISTINCT p.post_id) AS total_posts,
+    COUNT(DISTINCT l.like_id) AS total_likes,
+    COUNT(DISTINCT c.comment_id) AS total_comments,
+    ROUND(
+        (COUNT(DISTINCT l.like_id) + COUNT(DISTINCT c.comment_id)) 
+        / NULLIF(COUNT(DISTINCT p.post_id), 0), 2
+    ) AS engagement_rate
+FROM users u
+JOIN posts p ON u.user_id = p.user_id
+LEFT JOIN likes l ON p.post_id = l.post_id
+LEFT JOIN comments c ON p.post_id = c.post_id
+GROUP BY u.user_id, u.username
+ORDER BY engagement_rate DESC
+LIMIT 10;
+
+-- Q12  Identify mutual followers.
+
+SELECT 
+    ua.user_id AS user_a_id,
+    ua.username AS user_a_username,
+    ub.user_id AS user_b_id,
+    ub.username AS user_b_username,
+    f1.follow_date AS a_followed_b_on,
+    f2.follow_date AS b_followed_a_on
+FROM followers f1
+JOIN followers f2 
+    ON f1.user_id = f2.follower_user_id 
+    AND f1.follower_user_id = f2.user_id
+JOIN users ua ON f1.user_id = ua.user_id
+JOIN users ub ON f1.follower_user_id = ub.user_id
+WHERE f1.user_id < f1.follower_user_id;
+
+-- Q13 Find most used hashtags by top 5 influencers
+
+WITH top_influencers AS (
+    SELECT 
+        u.user_id,
+        u.username,
+        COUNT(f.follower_user_id) AS follower_count
+    FROM users u
+    JOIN followers f ON u.user_id = f.user_id
+    GROUP BY u.user_id, u.username
+    ORDER BY follower_count DESC
+    LIMIT 5
+)
+SELECT 
+    ti.user_id AS influencer_id,
+    ti.username AS influencer_username,
+    ti.follower_count,
+    h.hashtag_id,
+    h.tag_name,
+    COUNT(*) AS times_used
+FROM top_influencers ti
+JOIN posts p ON ti.user_id = p.user_id
+JOIN post_hashtags ph ON p.post_id = ph.post_id
+JOIN hashtags h ON ph.hashtag_id = h.hashtag_id
+GROUP BY ti.user_id, ti.username, ti.follower_count, h.hashtag_id, h.tag_name
+ORDER BY ti.follower_count DESC, times_used DESC;
+
+-- Q14 Create a country-wise engagement leaderboard
+SELECT 
+    u.country,
+    COUNT(DISTINCT p.post_id) AS total_posts,
+    COUNT(DISTINCT l.like_id) AS total_likes,
+    COUNT(DISTINCT c.comment_id) AS total_comments,
+    ROUND(
+        (COUNT(DISTINCT l.like_id) + COUNT(DISTINCT c.comment_id)) 
+        / NULLIF(COUNT(DISTINCT p.post_id), 0), 2
+    ) AS engagement_rate
+FROM users u
+JOIN posts p ON u.user_id = p.user_id
+LEFT JOIN likes l ON p.post_id = l.post_id
+LEFT JOIN comments c ON p.post_id = c.post_id
+GROUP BY u.country
+ORDER BY engagement_rate DESC;
